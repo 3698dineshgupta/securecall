@@ -33,6 +33,11 @@ class SignalingService {
 
     this.socket.on('connect_error', (err) => {
       console.error('[Signaling] Connection error:', err.message);
+      if (['Authentication required', 'Token expired', 'Invalid token'].includes(err.message)) {
+        // Dispatch local auth_error event so App.jsx can clear tokens and redirect
+        const authHandler = this.eventHandlers.get('auth_error');
+        if (authHandler) authHandler(err);
+      }
     });
 
     // Re-register event handlers after reconnection

@@ -75,6 +75,12 @@ export default function App() {
       };
 
       if (socket) {
+        // Listen to auth termination to redirect users gracefully
+        signalingService.on('auth_error', () => {
+          useAuthStore.getState().logout();
+          window.location.href = '/login';
+        });
+
         // If already connected, fetch immediately
         if (socket.connected) {
           handleConnect();
