@@ -75,8 +75,24 @@ export default function App() {
       };
 
       if (socket) {
-        // Listen to auth termination to redirect users gracefully
-        signalingService.on('auth_error', () => {
+        // Listen to auth termination to redirect users or silently refresh
+        signalingService.on('auth_error', async (err) => {
+          if (err?.message === 'Token expired') {
+            try {
+              // Force token refresh via an API call - interceptors will handle the refresh
+              await authAPI.me();
+              const newToken = localStorage.getItem('accessToken');
+              if (newToken) {
+                // Re-initialize socket with fresh token
+                signalingService.disconnect();
+                signalingService.connect(newToken);
+                return;
+              }
+            } catch (refreshErr) {
+              console.error('Failed to refresh token for signaling:', refreshErr);
+            }
+          }
+
           useAuthStore.getState().logout();
           window.location.href = '/login';
         });
