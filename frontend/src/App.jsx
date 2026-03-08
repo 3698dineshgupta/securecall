@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useAuthStore } from './store';
-import { authAPI } from './services/api';
+import { authAPI, callsAPI } from './services/api';
 import signalingService from './services/signaling';
 
 import LoginPage from './pages/LoginPage';
@@ -10,7 +10,7 @@ import DashboardPage from './pages/DashboardPage';
 import NotificationBar from './components/ui/NotificationBar';
 import IncomingCallModal from './components/call/IncomingCallModal';
 import ActiveCall from './components/call/ActiveCall';
-import { useCallStore } from './store';
+import { useCallStore, useNotificationStore } from './store';
 
 function ProtectedRoute({ children }) {
   const { isAuthenticated, isLoading } = useAuthStore();
@@ -55,11 +55,39 @@ export default function App() {
   useEffect(() => {
     if (isAuthenticated) {
       const token = localStorage.getItem('accessToken');
-      signalingService.connect(token);
+      const socket = signalingService.connect(token);
+
+      // Fetch missed calls once the socket is connected
+      const handleConnect = async () => {
+        try {
+          const res = await callsAPI.getMissedCalls();
+          if (res.data.missedCalls && res.data.missedCalls.length > 0) {
+            res.data.missedCalls.forEach(call => {
+              useNotificationStore.getState().addNotification({
+                type: 'warning',
+                message: `Missed ${call.call_type} call from ${call.caller_username}`
+              });
+            });
+          }
+        } catch (err) {
+          console.error('Failed to fetch missed calls:', err);
+        }
+      };
+
+      if (socket) {
+        // If already connected, fetch immediately
+        if (socket.connected) {
+          handleConnect();
+        } else {
+          // Otherwise, fetch on connect
+          socket.on('connect', handleConnect);
+        }
+      }
+
     } else {
       signalingService.disconnect();
     }
-    return () => {};
+    return () => { };
   }, [isAuthenticated]);
 
   return (

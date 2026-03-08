@@ -101,6 +101,7 @@ export const usersAPI = {
 export const callsAPI = {
   getHistory: (params) => api.get('/calls/history', { params }),
   recordCall: (data) => api.post('/calls/record', data),
+  getMissedCalls: () => api.get('/calls/missed'),
 };
 
 export default api;

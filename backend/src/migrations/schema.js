@@ -82,6 +82,12 @@ const migrations = [
         executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
     `
+  },
+  {
+    name: '006_add_is_notified_to_calls',
+    sql: `
+      ALTER TABLE call_history ADD COLUMN IF NOT EXISTS is_notified BOOLEAN DEFAULT FALSE;
+    `
   }
 ];
 
@@ -89,12 +95,12 @@ async function runMigrations() {
   try {
     // Create migrations table first
     await query(`
-      CREATE TABLE IF NOT EXISTS migrations (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) UNIQUE NOT NULL,
-        executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );
-    `);
+      CREATE TABLE IF NOT EXISTS migrations(
+      id SERIAL PRIMARY KEY,
+      name VARCHAR(255) UNIQUE NOT NULL,
+      executed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+`);
 
     for (const migration of migrations) {
       const existing = await query(
@@ -103,7 +109,7 @@ async function runMigrations() {
       );
 
       if (existing.rows.length === 0) {
-        console.log(`Running migration: ${migration.name}`);
+        console.log(`Running migration: ${migration.name} `);
         await query(migration.sql);
         await query(
           'INSERT INTO migrations (name) VALUES ($1)',

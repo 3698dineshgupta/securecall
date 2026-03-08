@@ -45,24 +45,22 @@ function ContactItem({ contact, onCall }) {
       </div>
       <div style={styles.callBtns}>
         <button
-          onClick={() => onCall(contact, 'audio')}
-          disabled={!isOnline}
+          onClick={() => onCall(contact, 'audio', isOnline)}
           style={styles.callBtn}
           title="Audio call"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.27 19.79 19.79 0 01.22 0.7 2 2 0 012.22.7h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 8.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z"/>
+            <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07A19.5 19.5 0 013.07 9.27 19.79 19.79 0 01.22 0.7 2 2 0 012.22.7h3a2 2 0 012 1.72 12.84 12.84 0 00.7 2.81 2 2 0 01-.45 2.11L6.09 8.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45 12.84 12.84 0 002.81.7A2 2 0 0122 16.92z" />
           </svg>
         </button>
         <button
-          onClick={() => onCall(contact, 'video')}
-          disabled={!isOnline}
+          onClick={() => onCall(contact, 'video', isOnline)}
           style={{ ...styles.callBtn, background: 'rgba(110, 231, 247, 0.1)', color: 'var(--accent-primary)' }}
           title="Video call"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <polygon points="23 7 16 12 23 17 23 7"/>
-            <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            <polygon points="23 7 16 12 23 17 23 7" />
+            <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
           </svg>
         </button>
       </div>
@@ -171,7 +169,7 @@ export default function DashboardPage() {
       try {
         const res = await usersAPI.search(searchQuery);
         setSearchResults(res.data.users);
-      } catch (e) {}
+      } catch (e) { }
       finally { setSearching(false); }
     }, 400);
     return () => clearTimeout(timer);
@@ -191,7 +189,7 @@ export default function DashboardPage() {
     try {
       const refreshToken = localStorage.getItem('refreshToken');
       await authAPI.logout(refreshToken);
-    } catch (e) {}
+    } catch (e) { }
     logout();
     navigate('/login');
   };
@@ -203,9 +201,9 @@ export default function DashboardPage() {
         <div style={styles.sidebarTop}>
           <div style={styles.brandRow}>
             <svg width="20" height="20" viewBox="0 0 32 32" fill="none">
-              <circle cx="16" cy="16" r="15" stroke="#6ee7f7" strokeWidth="1.5"/>
-              <path d="M10 22L16 10L22 22" stroke="#6ee7f7" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-              <path d="M12 18H20" stroke="#6ee7f7" strokeWidth="1.5" strokeLinecap="round"/>
+              <circle cx="16" cy="16" r="15" stroke="#6ee7f7" strokeWidth="1.5" />
+              <path d="M10 22L16 10L22 22" stroke="#6ee7f7" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M12 18H20" stroke="#6ee7f7" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
             <span style={styles.brand}>SECURECALL</span>
           </div>
@@ -218,9 +216,9 @@ export default function DashboardPage() {
             </div>
             <button onClick={handleLogout} style={styles.logoutBtn} title="Sign out">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
-                <polyline points="16 17 21 12 16 7"/>
-                <line x1="21" y1="12" x2="9" y2="12"/>
+                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
               </svg>
             </button>
           </div>
@@ -260,7 +258,26 @@ export default function DashboardPage() {
                   <ContactItem
                     key={contact.id}
                     contact={contact}
-                    onCall={initiateCall}
+                    onCall={async (contact, type, isOnline) => {
+                      if (!isOnline) {
+                        try {
+                          await callsAPI.recordCall({
+                            calleeId: contact.id,
+                            callType: type,
+                            status: 'missed',
+                            startedAt: new Date().toISOString()
+                          });
+                          useNotificationStore.getState().addNotification({
+                            type: 'warning',
+                            message: `User is offline. Missed call recorded.`
+                          });
+                        } catch (e) {
+                          console.error('Failed to log offline call', e);
+                        }
+                      } else {
+                        initiateCall(contact, type);
+                      }
+                    }}
                   />
                 ))
               )}
@@ -322,7 +339,7 @@ export default function DashboardPage() {
         <div style={styles.sidebarFooter}>
           <div style={styles.encBadge}>
             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
             </svg>
             <span>All calls end-to-end encrypted</span>
           </div>
@@ -335,7 +352,7 @@ export default function DashboardPage() {
           <div style={styles.welcomeGlow} />
           <div style={styles.welcomeContent}>
             <h2 style={styles.welcomeTitle}>
-              Encrypted calls,<br/>zero compromise.
+              Encrypted calls,<br />zero compromise.
             </h2>
             <p style={styles.welcomeDesc}>
               Select a contact and start a voice or video call.<br />

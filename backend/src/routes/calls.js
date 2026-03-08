@@ -4,6 +4,45 @@ const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
+// GET /api/calls/missed
+router.get('/missed', authenticate, async (req, res) => {
+  try {
+    // Start transaction to read and update atomically
+    await query('BEGIN');
+
+    // Fetch unnotified missed calls
+    const result = await query(
+      `SELECT
+        ch.id, ch.call_type, ch.created_at,
+        caller.username as caller_username
+       FROM call_history ch
+       JOIN users caller ON caller.id = ch.caller_id
+       WHERE ch.callee_id = $1 
+         AND ch.status = 'missed' 
+         AND ch.is_notified = FALSE`,
+      [req.userId]
+    );
+
+    // If there are calls, update them to notified
+    if (result.rows.length > 0) {
+      const callIds = result.rows.map(row => row.id);
+      await query(
+        `UPDATE call_history 
+         SET is_notified = TRUE 
+         WHERE id = ANY($1::uuid[])`,
+        [callIds]
+      );
+    }
+
+    await query('COMMIT');
+    res.json({ missedCalls: result.rows });
+  } catch (err) {
+    await query('ROLLBACK');
+    console.error('Fetch missed calls error:', err);
+    res.status(500).json({ error: 'Failed to fetch missed calls' });
+  }
+});
+
 // GET /api/calls/history
 router.get('/history', authenticate, async (req, res) => {
   try {
