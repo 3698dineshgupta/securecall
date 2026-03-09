@@ -130,7 +130,7 @@ export default function DashboardPage() {
   // Load contacts
   useEffect(() => {
     usersAPI.getContacts()
-      .then(res => setContacts(res.data.contacts))
+      .then(res => setContacts(res.data.contacts || []))
       .catch(console.error)
       .finally(() => setLoadingContacts(false));
   }, []);
@@ -139,7 +139,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (tab === 'history') {
       callsAPI.getHistory({ limit: 50 })
-        .then(res => setCallHistory(res.data.calls))
+        .then(res => setCallHistory(res.data.calls || []))
         .catch(console.error);
     }
   }, [tab]);
@@ -250,7 +250,7 @@ export default function DashboardPage() {
             <div>
               {loadingContacts ? (
                 <div style={styles.empty}>Loading contacts...</div>
-              ) : contacts.length === 0 ? (
+              ) : (contacts?.length || 0) === 0 ? (
                 <div style={styles.empty}>
                   <div>No contacts yet</div>
                   <button onClick={() => setTab('search')} style={styles.emptyAction}>
@@ -275,7 +275,7 @@ export default function DashboardPage() {
           {/* History */}
           {tab === 'history' && (
             <div>
-              {callHistory.length === 0 ? (
+              {(callHistory?.length || 0) === 0 ? (
                 <div style={styles.empty}>No call history</div>
               ) : (
                 callHistory.map(call => (
