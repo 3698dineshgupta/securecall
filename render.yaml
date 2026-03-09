@@ -50,15 +50,9 @@ services:
         destination: /index.html
     envVars:
       - key: REACT_APP_API_URL
-        fromService:
-          type: web
-          name: securecall-backend
-          property: hostport
+        value: https://securecall-1p6a.onrender.com/api
       - key: REACT_APP_SIGNALING_URL
-        fromService:
-          type: web
-          name: securecall-signalings
-          property: hostport
+        value: https://securecall-signalings.onrender.com
 
 databases:
   - name: securecall-db
