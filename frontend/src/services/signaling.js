@@ -29,9 +29,12 @@ class SignalingService {
 
     this.socket.on('connect', () => {
       this.isConnected = true;
-      console.log('[Signaling] Connected, Socket ID:', this.socket.id);
+      console.log('[Signaling] ✓ Connected Successfully!');
+      console.log('[Signaling] Socket ID:', this.socket.id);
+      console.log('[Signaling] socket.connected:', this.socket.connected);
+
       if (userId) {
-        console.log('[Signaling] Registering user:', userId);
+        console.log('[Signaling] Emitting register-user for:', userId);
         this.socket.emit('register-user', userId);
       }
     });

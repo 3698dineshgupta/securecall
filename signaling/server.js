@@ -3,7 +3,7 @@ const { createServer } = require('http');
 const { Server } = require('socket.io');
 const jwt = require('jsonwebtoken');
 
-const PORT = process.env.SIGNALING_PORT || 3002;
+const PORT = process.env.PORT || process.env.SIGNALING_PORT || 3002;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 const httpServer = createServer((req, res) => {
@@ -18,7 +18,7 @@ const httpServer = createServer((req, res) => {
 
 const io = new Server(httpServer, {
   cors: {
-    origin: FRONTEND_URL.split(','),
+    origin: FRONTEND_URL.includes(',') ? FRONTEND_URL.split(',') : FRONTEND_URL,
     methods: ['GET', 'POST'],
     credentials: true,
   },

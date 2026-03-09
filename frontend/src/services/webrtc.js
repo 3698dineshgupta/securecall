@@ -96,7 +96,12 @@ class WebRTCService {
     // ── Connection State ──
     this.peerConnection.onconnectionstatechange = () => {
       const state = this.peerConnection.connectionState;
-      console.log('[WebRTC] Connection state:', state);
+      console.log('[WebRTC] Connection state changed to:', state);
+
+      if (state === 'failed') {
+        console.error('[WebRTC] Connection failed. This often means NAT traversal (STUN/TURN) failed.');
+      }
+
       if (this.onConnectionStateChange) {
         this.onConnectionStateChange(state);
       }
@@ -162,8 +167,8 @@ class WebRTCService {
         err.name === 'NotAllowedError'
           ? 'Camera/microphone permission denied'
           : err.name === 'NotFoundError'
-          ? 'Camera or microphone not found'
-          : `Media error: ${err.message}`
+            ? 'Camera or microphone not found'
+            : `Media error: ${err.message}`
       );
     }
   }

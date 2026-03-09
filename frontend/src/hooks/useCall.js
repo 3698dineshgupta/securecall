@@ -163,8 +163,14 @@ export function useCall() {
       useCallStore.setState({ callId: acceptedCallId, callState: 'connecting' });
 
       try {
-        const offer = await webRTCService.createOffer();
-        signalingService.sendOffer(acceptedCallId, offer);
+        const { isInitiator } = useCallStore.getState();
+        if (isInitiator) {
+          console.log('[Call] Initiator creating WebRTC offer...');
+          const offer = await webRTCService.createOffer();
+          signalingService.sendOffer(acceptedCallId, offer);
+        } else {
+          console.log('[Call] Receiver waiting for WebRTC offer...');
+        }
       } catch (err) {
         addNotification({ type: 'error', message: 'Failed to create offer' });
         handleEndCall();
