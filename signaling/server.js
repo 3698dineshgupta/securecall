@@ -7,6 +7,11 @@ const PORT = process.env.PORT || process.env.SIGNALING_PORT || 3002;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 const httpServer = createServer((req, res) => {
+  if (req.url === '/' || req.url === '') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ status: 'SecureCall signaling server running' }));
+    return;
+  }
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ status: 'healthy', timestamp: new Date().toISOString() }));

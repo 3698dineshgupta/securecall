@@ -66,6 +66,13 @@ app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 
 // Health check
+app.get('/', (req, res) => {
+  res.json({
+    status: 'SecureCall backend running',
+    version: '1.0.0'
+  });
+});
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'healthy',
