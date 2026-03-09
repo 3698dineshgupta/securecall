@@ -12,13 +12,19 @@ class SignalingService {
   connect(token) {
     if (this.socket?.connected) return;
 
-    this.socket = io(SIGNALING_URL, {
+    // Parse URL and configure path if necessary based on Nginx setup
+    const signalingUrlObj = new URL(SIGNALING_URL);
+    const path = signalingUrlObj.pathname === '/' ? '/socket.io' : signalingUrlObj.pathname;
+
+    this.socket = io(signalingUrlObj.origin, {
       auth: { token },
+      path: path,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
-      transports: ['websocket'],
+      transports: ['websocket', 'polling'], // Allow polling fallback
+      withCredentials: true,
     });
 
     this.socket.on('connect', () => {

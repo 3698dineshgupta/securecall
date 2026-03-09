@@ -91,10 +91,19 @@ export default function App() {
             } catch (refreshErr) {
               console.error('Failed to refresh token for signaling:', refreshErr);
             }
+          } else if (err?.message === 'Invalid token' || err?.message === 'Authentication required') {
+            console.error('Signaling server authentication failed. Misconfigured JWT secret or missing token.');
+            useNotificationStore.getState().addNotification({
+              type: 'error',
+              message: 'Call server connection failed (Invalid Token)'
+            });
+            signalingService.disconnect();
+            return; // Do NOT log the user out of the main app
           }
 
-          useAuthStore.getState().logout();
-          window.location.href = '/login';
+          // If completely failed, then we might log out
+          // useAuthStore.getState().logout();
+          // window.location.href = '/login';
         });
 
         // If already connected, fetch immediately
