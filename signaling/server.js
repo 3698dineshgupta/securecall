@@ -22,146 +22,137 @@ const io = new Server(httpServer, {
     methods: ['GET', 'POST'],
     credentials: true,
   },
-  // Security: limit message size
   maxHttpBufferSize: 1e4, // 10KB max
   pingTimeout: 30000,
   pingInterval: 25000,
 });
 
-// In-memory state
-const connectedUsers = new Map(); // userId -> Set<socketId>
-const activeCalls = new Map();    // callId -> { callerId, calleeId, type, startedAt }
+// ─── USER PRESENCE & CALL MAPS ─────────────────────────────────────────────
+const userSocketMap = {}; // mapping structure: { userId : Set(socketId, socketId) }
+const activeCalls = new Map(); // callId -> { callerId, calleeId, type, status }
 
 // ─── JWT Authentication Middleware ────────────────────────────────────────────
 io.use((socket, next) => {
   try {
     const token = socket.handshake.auth.token || socket.handshake.headers.authorization?.replace('Bearer ', '');
 
-    if (!token) {
-      return next(new Error('Authentication required'));
-    }
+    if (!token) return next(new Error('Authentication required'));
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    console.log("Token verified:", decoded.userId);
-    socket.userId = decoded.userId;
-    socket.username = decoded.username;
+    socket.decodedUserId = decoded.userId;
     next();
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return next(new Error('Token expired'));
-    }
+    if (err.name === 'TokenExpiredError') return next(new Error('Token expired'));
     return next(new Error('Invalid token'));
   }
 });
 
-// ─── Helper Functions ─────────────────────────────────────────────────────────
-const isUserOnline = (userId) => {
-  return connectedUsers.has(userId) && connectedUsers.get(userId).size > 0;
-};
-
-const broadcastPresence = (userId, isOnline) => {
-  // Notify all sockets that might care about this user's status
-  io.emit('user:status', { userId, isOnline, lastSeen: new Date().toISOString() });
-  io.emit('user-status', { userId, status: isOnline ? 'online' : 'offline' });
-};
-
-const generateCallId = () => {
-  return `call_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-};
-
-// ─── Validate Call Permission ──────────────────────────────────────────────────
-const validateCallParticipant = (callId, userId) => {
-  const call = activeCalls.get(callId);
-  if (!call) return false;
-  return call.callerId === userId || call.calleeId === userId;
-};
-
-// ─── Connection Handler ───────────────────────────────────────────────────────
+// ─── CONNECTION HANDLER ───────────────────────────────────────────────────────
 io.on('connection', (socket) => {
-  const userId = socket.userId;
-  console.log("User connected:", userId);
-  console.log(`[SIGNALING] User connected: ${userId} (socket: ${socket.id})`);
+  console.log("Socket connected:", socket.id);
 
-  // Register user device
-  if (!connectedUsers.has(userId)) {
-    connectedUsers.set(userId, new Set());
-  }
-  connectedUsers.get(userId).add(socket.id);
+  socket.on('register-user', (userId) => {
+    console.log("User connected:", userId);
+    console.log("Socket ID:", socket.id);
 
-  // Join personal room to receive multi-device signaling
-  socket.join(`user:${userId}`);
+    // Safety check matching token to prevent impersonation
+    if (socket.decodedUserId !== userId) {
+      console.warn(`User ID mismatch. Token: ${socket.decodedUserId}, Requested: ${userId}`);
+      return;
+    }
 
-  broadcastPresence(userId, true);
-  io.emit('user-online', { userId }); // legacy requested logic
+    socket.userId = userId;
 
-  // Send current online users to newly connected user
-  const onlineUsers = Array.from(connectedUsers.keys());
-  socket.emit('users:online', { userIds: onlineUsers });
+    if (!userSocketMap[userId]) {
+      userSocketMap[userId] = new Set();
+    }
+    userSocketMap[userId].add(socket.id);
+
+    // Join personal room to receive multi-device signaling
+    socket.join(`user:${userId}`);
+
+    // Broadcast presence to all other users
+    io.emit('user:status', { userId, isOnline: true, lastSeen: new Date().toISOString() });
+
+    // Sync existing online users to the newly registered socket
+    const onlineUsers = Object.keys(userSocketMap).filter(id => userSocketMap[id].size > 0);
+    socket.emit('users:online', { userIds: onlineUsers });
+  });
+
+  socket.on('request-online-users', () => {
+    const onlineUsers = Object.keys(userSocketMap).filter(id => userSocketMap[id].size > 0);
+    socket.emit('users:online', { userIds: onlineUsers });
+  });
+
+  // Helper function to emit events to all connected sockets of a user
+  const emitToUser = (targetUserId, eventName, data) => {
+    if (userSocketMap[targetUserId]) {
+      userSocketMap[targetUserId].forEach(sockId => {
+        io.to(sockId).emit(eventName, data);
+      });
+    }
+  };
 
   // ─── CALL INITIATION ────────────────────────────────────────────────────────
-
-  // Caller initiates a call
   socket.on('call:initiate', ({ calleeId, callType }) => {
     try {
+      const userId = socket.userId;
       console.log("Call request:", userId, "->", calleeId);
 
-      if (!calleeId || !['audio', 'video'].includes(callType)) {
-        return socket.emit('call:error', { message: 'Invalid call parameters' });
-      }
+      if (!calleeId || !userId) return;
 
       if (calleeId === userId) {
         return socket.emit('call:error', { message: 'Cannot call yourself' });
       }
 
-      // Check if callee is online
-      if (!isUserOnline(calleeId)) {
+      // Check if callee is online using userSocketMap directly
+      const isOnline = userSocketMap[calleeId] && userSocketMap[calleeId].size > 0;
+      if (!isOnline) {
+        console.log(`Call delivery failed: User ${calleeId} is offline.`);
         return socket.emit('call:error', { message: 'User is offline', code: 'USER_OFFLINE' });
       }
 
-      // Check if either party is already in a call
       const callerBusy = Array.from(activeCalls.values()).some(
         c => (c.callerId === userId || c.calleeId === userId) && c.status === 'active'
       );
-      if (callerBusy) {
-        return socket.emit('call:error', { message: 'You are already in a call', code: 'ALREADY_IN_CALL' });
-      }
+      if (callerBusy) return socket.emit('call:error', { message: 'You are already in a call', code: 'ALREADY_IN_CALL' });
 
       const calleeBusy = Array.from(activeCalls.values()).some(
         c => (c.callerId === calleeId || c.calleeId === calleeId) && c.status === 'active'
       );
-      if (calleeBusy) {
-        return socket.emit('call:error', { message: 'User is busy', code: 'USER_BUSY' });
-      }
+      if (calleeBusy) return socket.emit('call:error', { message: 'User is busy', code: 'USER_BUSY' });
 
-      const callId = generateCallId();
+      // Generate Call Metadata
+      const callId = `call_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
       activeCalls.set(callId, {
         callId,
         callerId: userId,
         calleeId,
         callType,
         status: 'ringing',
-        createdAt: new Date().toISOString(),
       });
 
-      // Notify caller that call is ringing
+      // Confirm to caller via single socket
       socket.emit('call:ringing', { callId, calleeId });
 
-      // Notify callee of incoming call on ALL their devices
-      io.to(`user:${calleeId}`).emit('call:incoming', {
-        callId,
-        callerId: userId,
-        callType,
+      console.log(`Call delivery targeting User=${calleeId}`);
+      // Send call to all registered sockets of receiver
+      userSocketMap[calleeId].forEach(sockId => {
+        console.log(`Delivering [call:incoming] to receiver socket ${sockId}`);
+        io.to(sockId).emit('call:incoming', {
+          callId,
+          callerId: userId,
+          callType,
+        });
       });
-
-      console.log(`[CALL] Initiated: ${callId} | ${userId} -> ${calleeId} (${callType})`);
 
       // Auto-reject after 30 seconds if not answered
       setTimeout(() => {
         const call = activeCalls.get(callId);
         if (call && call.status === 'ringing') {
           activeCalls.delete(callId);
-          socket.emit('call:missed', { callId });
-          io.to(`user:${calleeId}`).emit('call:missed', { callId });
+          emitToUser(call.callerId, 'call:missed', { callId });
+          emitToUser(call.calleeId, 'call:missed', { callId });
           console.log(`[CALL] Missed (timeout): ${callId}`);
         }
       }, 30000);
@@ -172,170 +163,94 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Callee accepts the call
   socket.on('call:accept', ({ callId }) => {
-    try {
-      const call = activeCalls.get(callId);
-      if (!call || call.calleeId !== userId) {
-        return socket.emit('call:error', { message: 'Call not found', code: 'CALL_NOT_FOUND' });
-      }
+    const call = activeCalls.get(callId);
+    if (!call || call.calleeId !== socket.userId) return;
 
-      if (call.status !== 'ringing') {
-        return socket.emit('call:error', { message: 'Call is no longer available' });
-      }
-
-      call.status = 'active';
-      call.startedAt = new Date().toISOString();
-      activeCalls.set(callId, call);
-
-      // Notify caller that call was accepted
-      io.to(`user:${call.callerId}`).emit('call:accepted', { callId, calleeId: userId });
-
-      // Acknowledge locally to callee
-      socket.emit('call:accepted', { callId, callerId: call.callerId });
-      console.log(`[CALL] Accepted: ${callId}`);
-    } catch (err) {
-      console.error('[CALL] Accept error:', err);
-    }
+    call.status = 'active';
+    emitToUser(call.callerId, 'call:accepted', { callId, calleeId: socket.userId });
+    socket.emit('call:accepted', { callId, callerId: call.callerId });
   });
 
-  // Callee rejects the call
   socket.on('call:reject', ({ callId }) => {
-    try {
-      const call = activeCalls.get(callId);
-      if (!call) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
 
-      if (call.calleeId !== userId && call.callerId !== userId) {
-        return socket.emit('call:error', { message: 'Unauthorized' });
-      }
-
-      activeCalls.delete(callId);
-
-      io.to(`user:${call.callerId}`).emit('call:rejected', { callId });
-      io.to(`user:${call.calleeId}`).emit('call:rejected', { callId });
-
-      console.log(`[CALL] Rejected: ${callId} by ${userId}`);
-    } catch (err) {
-      console.error('[CALL] Reject error:', err);
-    }
+    activeCalls.delete(callId);
+    emitToUser(call.callerId, 'call:rejected', { callId });
+    emitToUser(call.calleeId, 'call:rejected', { callId });
   });
 
-  // Either party ends the call
   socket.on('call:end', ({ callId }) => {
-    try {
-      const call = activeCalls.get(callId);
-      if (!call) return;
+    const call = activeCalls.get(callId);
+    if (!call) return;
 
-      if (!validateCallParticipant(callId, userId)) {
-        return socket.emit('call:error', { message: 'Unauthorized' });
-      }
-
-      activeCalls.delete(callId);
-
-      // Notify both parties on all their devices
-      io.to(`user:${call.callerId}`).emit('call:ended', { callId, endedBy: userId });
-      io.to(`user:${call.calleeId}`).emit('call:ended', { callId, endedBy: userId });
-
-      console.log(`[CALL] Ended: ${callId} by ${userId}`);
-    } catch (err) {
-      console.error('[CALL] End error:', err);
-    }
+    activeCalls.delete(callId);
+    emitToUser(call.callerId, 'call:ended', { callId, endedBy: socket.userId });
+    emitToUser(call.calleeId, 'call:ended', { callId, endedBy: socket.userId });
   });
 
   // ─── WEBRTC SIGNALING (SDP + ICE) ───────────────────────────────────────────
-  // IMPORTANT: Server ONLY relays these messages - never reads/stores media content
-
-  // Relay SDP offer from caller to callee
   socket.on('webrtc:offer', ({ callId, sdp }) => {
-    try {
-      if (!validateCallParticipant(callId, userId)) {
-        return socket.emit('call:error', { message: 'Unauthorized' });
-      }
-
-      const call = activeCalls.get(callId);
-      const targetId = call.callerId === userId ? call.calleeId : call.callerId;
-
-      // RELAY ONLY - send to all target devices. 
-      // (Whichever one answered will process it)
-      io.to(`user:${targetId}`).emit('webrtc:offer', { callId, sdp, fromUserId: userId });
-    } catch (err) {
-      console.error('[WEBRTC] Offer relay error:', err);
-    }
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    const targetId = call.callerId === socket.userId ? call.calleeId : call.callerId;
+    emitToUser(targetId, 'webrtc:offer', { callId, sdp });
   });
 
-  // Relay SDP answer from callee to caller
   socket.on('webrtc:answer', ({ callId, sdp }) => {
-    try {
-      if (!validateCallParticipant(callId, userId)) {
-        return socket.emit('call:error', { message: 'Unauthorized' });
-      }
-
-      const call = activeCalls.get(callId);
-      const targetId = call.callerId === userId ? call.calleeId : call.callerId;
-      io.to(`user:${targetId}`).emit('webrtc:answer', { callId, sdp, fromUserId: userId });
-    } catch (err) {
-      console.error('[WEBRTC] Answer relay error:', err);
-    }
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    const targetId = call.callerId === socket.userId ? call.calleeId : call.callerId;
+    emitToUser(targetId, 'webrtc:answer', { callId, sdp });
   });
 
-  // Relay ICE candidates between peers
   socket.on('webrtc:ice-candidate', ({ callId, candidate }) => {
-    try {
-      if (!validateCallParticipant(callId, userId)) return;
-
-      const call = activeCalls.get(callId);
-      const targetId = call.callerId === userId ? call.calleeId : call.callerId;
-      io.to(`user:${targetId}`).emit('webrtc:ice-candidate', { callId, candidate, fromUserId: userId });
-    } catch (err) {
-      console.error('[WEBRTC] ICE relay error:', err);
-    }
+    const call = activeCalls.get(callId);
+    if (!call) return;
+    const targetId = call.callerId === socket.userId ? call.calleeId : call.callerId;
+    emitToUser(targetId, 'webrtc:ice-candidate', { callId, candidate });
   });
 
-  // ─── PRESENCE & DISCONNECT ───────────────────────────────────────────────────
+  // ─── PRESENCE LOGIC & DISCONNECT ───────────────────────────────────────────
   socket.on('disconnect', (reason) => {
-    console.log(`[SIGNALING] User disconnected: ${userId} (${reason})`);
+    const userId = socket.userId;
+    console.log(`Socket disconnected: ${socket.id} (User: ${userId || 'unregistered'}, Reason: ${reason})`);
 
-    // End any active calls
-    for (const [callId, call] of activeCalls.entries()) {
-      if (call.callerId === userId || call.calleeId === userId) {
-        activeCalls.delete(callId);
-        const otherId = call.callerId === userId ? call.calleeId : call.callerId;
-        io.to(`user:${otherId}`).emit('call:ended', { callId, reason: 'peer_disconnected' });
-      }
-    }
+    if (userId && userSocketMap[userId]) {
+      userSocketMap[userId].delete(socket.id);
 
-    // Cleanup user device tracking
-    if (connectedUsers.has(userId)) {
-      const devices = connectedUsers.get(userId);
-      devices.delete(socket.id);
-      if (devices.size === 0) {
-        connectedUsers.delete(userId);
-        broadcastPresence(userId, false);
+      if (userSocketMap[userId].size === 0) {
+        delete userSocketMap[userId];
+        io.emit('user:status', { userId, isOnline: false });
+
+        // Clean up any calls this user was in
+        for (const [callId, call] of activeCalls.entries()) {
+          if (call.status === 'active' || call.status === 'ringing') {
+            if (call.callerId === userId || call.calleeId === userId) {
+              activeCalls.delete(callId);
+              const otherId = call.callerId === userId ? call.calleeId : call.callerId;
+              emitToUser(otherId, 'call:ended', { callId, reason: 'peer_disconnected' });
+            }
+          }
+        }
       }
     }
   });
 
-  // Heartbeat
-  socket.on('ping', () => {
-    socket.emit('pong', { timestamp: Date.now() });
-  });
+  socket.on('ping', () => socket.emit('pong', { timestamp: Date.now() }));
 });
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`✓ SecureCall Signaling Server running on port ${PORT}`);
-  console.log(`  CORS origin: ${FRONTEND_URL}`);
   console.log('  Security: JWT authenticated WebSocket connections');
-  console.log('  Privacy: Server only relays SDP/ICE - never accesses media');
 });
 
-// Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('Shutting down signaling server...');
   io.close(() => {
-    httpServer.close(() => {
-      process.exit(0);
-    });
+    httpServer.close(() => process.exit(0));
   });
 });
 

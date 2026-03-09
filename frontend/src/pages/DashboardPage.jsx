@@ -152,6 +152,10 @@ export default function DashboardPage() {
     signalingService.on('users:online', ({ userIds }) => {
       setOnlineUsers(userIds);
     });
+
+    // Explicitly request online users since dashboard might mount after initial connection
+    signalingService.emit('request-online-users');
+
     return () => {
       signalingService.off('user:status');
       signalingService.off('users:online');

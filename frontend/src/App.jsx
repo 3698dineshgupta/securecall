@@ -32,7 +32,7 @@ function LoadingScreen() {
 }
 
 export default function App() {
-  const { setUser, setLoading, isAuthenticated } = useAuthStore();
+  const { user, setUser, setLoading, isAuthenticated } = useAuthStore();
   const { callState, incomingCall } = useCallStore();
 
   // ── Restore session on mount ──
@@ -53,9 +53,9 @@ export default function App() {
 
   // ── Connect signaling when authenticated ──
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && user?.id) {
       const token = localStorage.getItem('accessToken');
-      const socket = signalingService.connect(token);
+      const socket = signalingService.connect(token, user.id);
 
       // Fetch missed calls once the socket is connected
       const handleConnect = async () => {

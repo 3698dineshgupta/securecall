@@ -9,7 +9,7 @@ class SignalingService {
     this.eventHandlers = new Map();
   }
 
-  connect(token) {
+  connect(token, userId) {
     if (this.socket?.connected) return;
 
     // Parse URL and configure path if necessary based on Nginx setup
@@ -29,7 +29,11 @@ class SignalingService {
 
     this.socket.on('connect', () => {
       this.isConnected = true;
-      console.log('[Signaling] Connected');
+      console.log('[Signaling] Connected, Socket ID:', this.socket.id);
+      if (userId) {
+        console.log('[Signaling] Registering user:', userId);
+        this.socket.emit('register-user', userId);
+      }
     });
 
     this.socket.on('disconnect', (reason) => {
