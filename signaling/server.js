@@ -91,11 +91,8 @@ io.on('connection', (socket) => {
 
   // Helper function to emit events to all connected sockets of a user
   const emitToUser = (targetUserId, eventName, data) => {
-    if (userSocketMap[targetUserId]) {
-      userSocketMap[targetUserId].forEach(sockId => {
-        io.to(sockId).emit(eventName, data);
-      });
-    }
+    console.log(`[Emit] To User ${targetUserId} Event ${eventName}`);
+    io.to(`user:${targetUserId}`).emit(eventName, data);
   };
 
   // ─── CALL INITIATION ────────────────────────────────────────────────────────
@@ -140,15 +137,11 @@ io.on('connection', (socket) => {
       // Confirm to caller via single socket
       socket.emit('call:ringing', { callId, calleeId });
 
-      console.log(`Call delivery targeting User=${calleeId}`);
-      // Send call to all registered sockets of receiver
-      userSocketMap[calleeId].forEach(sockId => {
-        console.log(`Delivering [call:incoming] to receiver socket ${sockId}`);
-        io.to(sockId).emit('call:incoming', {
-          callId,
-          callerId: userId,
-          callType,
-        });
+      console.log(`Call delivery targeting User=${calleeId} via room`);
+      io.to(`user:${calleeId}`).emit('call:incoming', {
+        callId,
+        callerId: userId,
+        callType,
       });
 
       // Auto-reject after 30 seconds if not answered

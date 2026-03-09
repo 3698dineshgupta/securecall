@@ -212,6 +212,7 @@ export function useCall() {
 
     // Incoming call
     signalingService.on('call:incoming', ({ callId: incomingCallId, callerId, callType: type }) => {
+      console.log('[Call] Incoming call event received:', { callId: incomingCallId, from: callerId, type });
       setIncomingCall({ callId: incomingCallId, callerId, callType: type, caller: { id: callerId } });
       addNotification({ type: 'call', message: `Incoming ${type} call` });
     });
