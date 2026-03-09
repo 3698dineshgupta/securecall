@@ -1,5 +1,4 @@
 services:
-  # Base env group to share variables like JWT secrets across services
   - type: web
     name: securecall-backend
     env: node
@@ -18,36 +17,34 @@ services:
         fromDatabase:
           name: securecall-db
           property: connectionString
-      # Allow frontend URL to be accessed (needs to be manually set in dashboard once known)
       - key: FRONTEND_URL
         sync: false
   
   - type: web
-    name: securecall-signaling
+    name: securecall-signalings
     env: node
     buildCommand: "cd signaling && npm install"
     startCommand: "cd signaling && npm run start"
     envVars:
       - key: NODE_ENV
         value: production
-      - key: SIGNALING_PORT
+      - key: PORT
         value: 3002
+      - key: FRONTEND_URL
+        sync: false
       - key: JWT_SECRET
         fromService:
           type: web
           name: securecall-backend
           property: envVar
           envVarKey: JWT_SECRET
-      - key: FRONTEND_URL
-        sync: false
         
   - type: web
-    name: securecall-frontend
+    name: secure-call
     env: static
     buildCommand: "cd frontend && npm install && npm run build"
     staticPublishPath: "./frontend/build"
     routes:
-      # This fixes the "Not Found" error on refresh in Render!
       - type: rewrite
         source: /*
         destination: /index.html
@@ -60,7 +57,7 @@ services:
       - key: REACT_APP_SIGNALING_URL
         fromService:
           type: web
-          name: securecall-signaling
+          name: securecall-signalings
           property: hostport
 
 databases:
