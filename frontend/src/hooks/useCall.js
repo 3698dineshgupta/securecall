@@ -120,6 +120,18 @@ export function useCall() {
         } catch (e) {
           console.error('Failed to record call:', e);
         }
+      } else if (isInitiator) {
+        // If the call was never started (null start time) and I am caller, log as missed!
+        try {
+          await callsAPI.recordCall({
+            calleeId: currentRemoteUser?.id,
+            callType: currentCallType,
+            status: 'missed',
+            startedAt: new Date().toISOString()
+          });
+        } catch (e) {
+          console.error('Failed to record missed call:', e);
+        }
       }
     }
 
@@ -201,8 +213,7 @@ export function useCall() {
     // Call rejected
     signalingService.on('call:rejected', ({ callId: rejectedCallId }) => {
       addNotification({ type: 'info', message: 'Call was rejected' });
-      webRTCService.cleanup();
-      endCall();
+      handleEndCall();
     });
 
     // Call ended by remote
@@ -221,8 +232,7 @@ export function useCall() {
     // Call missed
     signalingService.on('call:missed', () => {
       addNotification({ type: 'warning', message: 'Call was not answered' });
-      webRTCService.cleanup();
-      endCall();
+      handleEndCall();
     });
 
     // User busy
@@ -236,10 +246,10 @@ export function useCall() {
 
     return () => {
       ['call:accepted', 'call:ringing', 'call:incoming', 'call:rejected',
-       'call:ended', 'call:missed', 'call:error',
-       'webrtc:offer', 'webrtc:answer', 'webrtc:ice-candidate'].forEach(event => {
-        signalingService.off(event);
-      });
+        'call:ended', 'call:missed', 'call:error',
+        'webrtc:offer', 'webrtc:answer', 'webrtc:ice-candidate'].forEach(event => {
+          signalingService.off(event);
+        });
     };
   }, []);
 

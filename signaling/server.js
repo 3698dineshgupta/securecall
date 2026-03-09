@@ -105,11 +105,11 @@ io.on('connection', (socket) => {
         return socket.emit('call:error', { message: 'Cannot call yourself' });
       }
 
-      // Check if callee is online using userSocketMap directly
+      // Note: We deliberately skip the `!isOnline` return-error block here.
+      // This allows the WhatsApp-style offline calling experience.
       const isOnline = userSocketMap[calleeId] && userSocketMap[calleeId].size > 0;
       if (!isOnline) {
-        console.log(`Call delivery failed: User ${calleeId} is offline.`);
-        return socket.emit('call:error', { message: 'User is offline', code: 'USER_OFFLINE' });
+        console.log(`Call delivery info: User ${calleeId} is offline. Starting 30s ringing timeout.`);
       }
 
       const callerBusy = Array.from(activeCalls.values()).some(

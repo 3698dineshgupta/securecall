@@ -263,24 +263,8 @@ export default function DashboardPage() {
                     key={contact.id}
                     contact={contact}
                     onCall={async (contact, type, isOnline) => {
-                      if (!isOnline) {
-                        try {
-                          await callsAPI.recordCall({
-                            calleeId: contact.id,
-                            callType: type,
-                            status: 'missed',
-                            startedAt: new Date().toISOString()
-                          });
-                          useNotificationStore.getState().addNotification({
-                            type: 'warning',
-                            message: `User is offline. Missed call recorded.`
-                          });
-                        } catch (e) {
-                          console.error('Failed to log offline call', e);
-                        }
-                      } else {
-                        initiateCall(contact, type);
-                      }
+                      // WhatsApp style: Always initiate call, server handles 30s timeout
+                      initiateCall(contact, type);
                     }}
                   />
                 ))
